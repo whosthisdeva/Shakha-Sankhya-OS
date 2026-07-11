@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ShakhaOS">
-  <rect width="512" height="512" rx="96" fill="#135e5a"/>
-  <circle cx="256" cy="202" r="98" fill="#f6c65b"/>
-  <path d="M128 378c32-82 96-122 128-122s96 40 128 122" fill="none" stroke="#fff7df" stroke-width="46" stroke-linecap="round"/>
-  <path d="M164 126h184v58H164zM164 216h184v58H164z" fill="#fff7df" opacity=".95"/>
-</svg>
