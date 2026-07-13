@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shakha QR Generator</title>
+    <!-- Google Fonts for a clean look -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- QR Code Library hosted securely via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: #f4f6f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        p.subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            text-align: left;
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #4a4a4a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #dcdcdc;
+            border-radius: 8px;
+            font-size: 15px;
+            background-color: #fff;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        select:focus, input:focus {
+            border-color: #ff6600; /* Saffron tint for Shakha theme */
+        }
+
+        .qr-section {
+            background-color: #fafafa;
+            border: 1px dashed #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 240px;
+        }
+
+        #qrcode {
+            margin-bottom: 16px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        /* Forces the generated image inside the library to be crisp */
+        #qrcode img {
+            display: block;
+        }
+
+        .download-btn {
+            background-color: #ff6600;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s;
+        }
+
+        .download-btn:hover {
+            background-color: #e05500;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Shakha QR Generator</h1>
+    <p class="subtitle">Generate weekly attendance and tracking QR codes.</p>
+
+    <!-- Form Inputs -->
+    <div class="form-group">
+        <label for="shakhaSelect">Select Shakha</label>
+        <select id="shakhaSelect" onchange="generateQR()">
+            <option value="Bal Shakha">Bal Shakha</option>
+            <option value="Yuva Shakha">Yuva Shakha</option>
+            <option value="Mukhya Shakha">Mukhya Shakha</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="datePicker">Sunday Date</label>
+        <input type="date" id="datePicker" onchange="generateQR()">
+    </div>
+
+    <!-- QR Output Window -->
+    <div class="qr-section">
+        <div id="qrcode"></div>
+        <button class="download-btn" onclick="downloadQR()">Download QR Code</button>
+    </div>
+</div>
+
+<script>
+    // Initialize the QR Code container variable globally
+    let qrcodeElement = document.getElementById("qrcode");
+    let qrCodeGenerator = new QRCode(qrcodeElement, {
+        width: 180,
+        height: 180,
+        correctLevel: QRCode.CorrectLevel.H
+    });
+
+    // Helper function to automatically find and set the upcoming Sunday's date
+    function setUpcomingSunday() {
+        let today = new Date();
+        let dayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday, etc.
+        let daysUntilSunday = (7 - dayOfWeek) % 7;
+        
+        // If today is Sunday, we default to today. Otherwise, look forward to next Sunday.
+        let nextSunday = new Date(today);
+        nextSunday.setDate(today.getDate() + daysUntilSunday);
+        
+        // Format to YYYY-MM-DD for the HTML date input
+        let yyyy = nextSunday.getFullYear();
+        let mm = String(nextSunday.getMonth() + 1).padStart(2, '0');
+        let dd = String(nextSunday.getDate()).padStart(2, '0');
+        
+        document.getElementById("datePicker").value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Master function that reads inputs and updates the QR code content
+    function generateQR() {
+        let selectedShakha = document.getElementById("shakhaSelect").value;
+        let selectedDate = document.getElementById("datePicker").value;
+        
+        // This is the actual data embedded into the QR code scan. 
+        // You can change this text formatting or swap it with a URL format if needed!
+        let qrDataString = `Shakha: ${selectedShakha} | Date: ${selectedDate}`;
+        
+        qrCodeGenerator.makeCode(qrDataString);
+    }
+
+    // Function to download the generated QR code image file
+    function downloadQR() {
+        let qrImage = qrcodeElement.querySelector("img");
+        if (qrImage) {
+            let selectedShakha = document.getElementById("shakhaSelect").value.replace(/\s+/g, '-').toLowerCase();
+            let selectedDate = document.getElementById("datePicker").value;
+            
+            let downloadLink = document.createElement("a");
+            downloadLink.href = qrImage.src;
+            downloadLink.download = `qr-${selectedShakha}-${selectedDate}.png`;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        } else {
+            alert("QR Code image hasn't loaded yet. Try again in a second!");
+        }
+    }
+
+    // Run setup items right when the page loads up
+    setUpcomingSunday();
+    generateQR();
+</script>
+
+</body>
+</html>
