@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 
@@ -5,5 +6,9 @@ import react from "@vitejs/plugin-react-swc";
 // /__/auth/handler and breaking Google sign-in on Firebase Hosting.
 // (attendance-tracker has no PWA for the same reason.)
 export default defineConfig({
-  plugins: [react()]
+  plugins: [react()],
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"]
+  }
 });

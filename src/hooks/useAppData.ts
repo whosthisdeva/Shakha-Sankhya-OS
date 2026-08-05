@@ -4,6 +4,7 @@ import {
   listAdmins,
   listSankhya,
   listShakhas,
+  deleteAdmin,
   saveAdmin,
   saveSankhya,
   saveShakha
@@ -76,6 +77,11 @@ export function useAppData(enabled: boolean) {
       const saved = await saveAdmin(admin);
       setAdmins((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
       return saved;
+    },
+    removeAdmin: async (email: string) => {
+      await deleteAdmin(email);
+      const id = email.trim().toLowerCase();
+      setAdmins((items) => items.filter((item) => item.id !== id && item.email !== id));
     },
     upsertShakha: async (shakha: Shakha) => {
       const saved = await saveShakha(shakha);

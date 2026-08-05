@@ -505,6 +505,39 @@ textarea {
   font-weight: 600;
 }
 
+.field-hint {
+  color: #66736d;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.admin-row {
+  align-items: center;
+  background: #f8faf7;
+  border: 1px solid #e1e8e2;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.admin-row small {
+  color: #66736d;
+  display: block;
+  margin-top: 4px;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.text-button.danger {
+  color: #b42318;
+}
+
 .error-banner {
   background: #fdecea;
   border: 1px solid #f5c2c0;

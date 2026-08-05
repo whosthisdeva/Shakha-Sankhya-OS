@@ -1,6 +1,7 @@
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getAdminByEmail } from "../lib/db";
+import { isActiveAdminProfile } from "../lib/adminAccess";
 import { auth, googleProvider, isFirebaseConfigured } from "../lib/firebase";
 import type { AdminUser } from "../types";
 import { AuthContext } from "./authContext";
@@ -38,9 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void getAdminByEmail(nextUser.email)
         .then((profile) => {
           const email = nextUser.email ?? "";
-          setAdmin(profile?.active ? profile : null);
+          setAdmin(isActiveAdminProfile(profile) ? profile : null);
           setAdminCheckError(
-            profile?.active
+            isActiveAdminProfile(profile)
               ? null
               : `No active admin doc for ${email}. Create Firestore admins/${email.toLowerCase()}.`
           );

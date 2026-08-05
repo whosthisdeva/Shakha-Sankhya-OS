@@ -23,6 +23,7 @@ import {
   type SankhyaEntry,
   type Shakha
 } from "./types";
+import { adminRequiresShakha, validateAdminForm } from "./lib/adminAccess";
 
 const roles: Role[] = ["nationalAdmin", "vibhagAdmin", "shakhaAdmin", "teacher", "volunteer"];
 
@@ -207,7 +208,15 @@ function App() {
           <div className="empty-state">Add a shakha first (Shakhas tab), then enter sankhya here.</div>
         )}
         {!data.loading && tab === "shakhas" && <ShakhaScreen onSave={data.upsertShakha} shakhas={data.shakhas} />}
-        {!data.loading && tab === "admins" && <AdminScreen admins={data.admins} onSave={data.upsertAdmin} shakhas={data.shakhas} />}
+        {!data.loading && tab === "admins" && (
+          <AdminScreen
+            admins={data.admins}
+            currentEmail={user?.email || ""}
+            onSave={data.upsertAdmin}
+            onRemove={data.removeAdmin}
+            shakhas={data.shakhas}
+          />
+        )}
         {!data.loading && tab === "reports" && (
           <ReportsScreen sankhya={data.sankhya} selectedShakhaId={selectedShakha?.id} shakhas={data.shakhas} summary={data.summary} />
         )}
@@ -427,35 +436,166 @@ function ShakhaScreen({ onSave, shakhas }: { onSave: (shakha: Shakha) => Promise
   );
 }
 
-function AdminScreen({ admins, onSave, shakhas }: { admins: AdminUser[]; onSave: (admin: AdminUser) => Promise<unknown>; shakhas: Shakha[] }) {
+function AdminScreen({
+  admins,
+  currentEmail,
+  onSave,
+  onRemove,
+  shakhas
+}: {
+  admins: AdminUser[];
+  currentEmail: string;
+  onSave: (admin: AdminUser) => Promise<unknown>;
+  onRemove: (email: string) => Promise<unknown>;
+  shakhas: Shakha[];
+}) {
   const [form, setForm] = useState<AdminUser>({
     id: "",
     email: "",
-    role: "shakhaAdmin",
-    assignedShakhaId: shakhas[0]?.id || "",
+    role: "nationalAdmin",
+    assignedShakhaId: undefined,
     active: true
   });
+  const [error, setError] = useState<string | null>(null);
+  const [busyEmail, setBusyEmail] = useState<string | null>(null);
+
+  const needsShakha = adminRequiresShakha(form.role);
+  const selfEmail = currentEmail.trim().toLowerCase();
+
   return (
     <section className="screen-grid">
       <EditorPanel
         title="Add Administrator"
-        onSubmit={() => onSave({ ...form, id: form.email.trim().toLowerCase(), email: form.email.trim().toLowerCase() })}
+        onSubmit={async () => {
+          setError(null);
+          const validationError = validateAdminForm(form);
+          if (validationError) {
+            setError(validationError);
+            throw new Error(validationError);
+          }
+          const email = form.email.trim().toLowerCase();
+          try {
+            await onSave({
+              ...form,
+              id: email,
+              email,
+              assignedShakhaId: form.role === "nationalAdmin" ? undefined : form.assignedShakhaId || undefined,
+              active: true
+            });
+            setForm({
+              id: "",
+              email: "",
+              role: "nationalAdmin",
+              assignedShakhaId: undefined,
+              active: true
+            });
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to save admin");
+            throw e;
+          }
+        }}
       >
         <TextInput label="Email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
         <SelectInput
           label="Access Level"
           value={form.role}
           options={roles.map((item) => [item, roleLabel(item)])}
-          onChange={(role) => setForm({ ...form, role: role as Role })}
+          onChange={(role) => {
+            const next = role as Role;
+            setForm({
+              ...form,
+              role: next,
+              assignedShakhaId: next === "nationalAdmin" ? undefined : form.assignedShakhaId || shakhas[0]?.id
+            });
+          }}
         />
         <SelectInput
           label="Assigned Shakha"
           value={form.assignedShakhaId || ""}
-          options={[["", "Optional / National"], ...shakhas.map((item) => [item.id, item.name] as [string, string])]}
+          options={[
+            ["", form.role === "nationalAdmin" ? "Optional / National" : "Select a shakha"],
+            ...shakhas.map((item) => [item.id, item.name] as [string, string])
+          ]}
           onChange={(assignedShakhaId) => setForm({ ...form, assignedShakhaId: assignedShakhaId || undefined })}
         />
+        {needsShakha ? <p className="field-hint">Shakha assignment is required for this role.</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
       </EditorPanel>
-      <ListPanel title="Administrators" items={admins.map((item) => `${item.email} / ${roleLabel(item.role)} / ${item.assignedShakhaId || "All"}`)} />
+
+      <div className="panel">
+        <h2>Administrators</h2>
+        <div className="stack-list">
+          {admins.length === 0 ? <div className="empty-state">None yet.</div> : null}
+          {admins.map((item) => {
+            const isSelf = item.email === selfEmail || item.id === selfEmail;
+            const busy = busyEmail === item.email;
+            return (
+              <div className="admin-row" key={item.id || item.email}>
+                <div>
+                  <strong>{item.email}</strong>
+                  <small>
+                    {roleLabel(item.role)} / {item.assignedShakhaId || "All"} /{" "}
+                    {item.active ? "Active" : "Blocked"}
+                  </small>
+                </div>
+                <div className="admin-actions">
+                  {item.active ? (
+                    <button
+                      className="text-button"
+                      disabled={busy || isSelf}
+                      onClick={async () => {
+                        setBusyEmail(item.email);
+                        try {
+                          await onSave({ ...item, active: false });
+                        } finally {
+                          setBusyEmail(null);
+                        }
+                      }}
+                      title={isSelf ? "You cannot block yourself" : "Block login"}
+                      type="button"
+                    >
+                      Block
+                    </button>
+                  ) : (
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusyEmail(item.email);
+                        try {
+                          await onSave({ ...item, active: true });
+                        } finally {
+                          setBusyEmail(null);
+                        }
+                      }}
+                      type="button"
+                    >
+                      Restore
+                    </button>
+                  )}
+                  <button
+                    className="text-button danger"
+                    disabled={busy || isSelf}
+                    onClick={async () => {
+                      if (!window.confirm(`Remove admin access for ${item.email}?`)) return;
+                      setBusyEmail(item.email);
+                      try {
+                        await onRemove(item.email);
+                      } finally {
+                        setBusyEmail(null);
+                      }
+                    }}
+                    title={isSelf ? "You cannot delete yourself" : "Delete admin record"}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </section>
   );
 }

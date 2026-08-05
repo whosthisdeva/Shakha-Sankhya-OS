@@ -1,5 +1,7 @@
 import {
   collection,
+  deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -10,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { nowISO } from "./dates";
+import { prepareAdminWrite } from "./adminAccess";
 import {
   emptyCounts,
   sankhyaDocId,
@@ -84,22 +87,34 @@ export async function getAdminByEmail(email: string): Promise<AdminUser | null> 
 }
 
 export async function saveAdmin(admin: AdminUser): Promise<AdminUser> {
-  const id = admin.email.trim().toLowerCase();
-  await setDoc(
-    doc(requireDb(), "admins", id),
-    {
-      email: id,
-      role: admin.role,
-      assignedShakhaId: admin.assignedShakhaId,
-      assignedVibhag: admin.assignedVibhag,
-      active: admin.active,
-      uid: admin.uid,
-      createdAt: admin.createdAt,
-      updatedAt: nowISO()
-    },
-    { merge: true }
-  );
-  return { ...admin, id, email: id };
+  const stamp = nowISO();
+  const prepared = prepareAdminWrite(admin, stamp);
+  const payload: Record<string, unknown> = {
+    email: prepared.email,
+    role: prepared.role,
+    active: prepared.active,
+    createdAt: prepared.createdAt,
+    updatedAt: stamp,
+    assignedShakhaId: prepared.assignedShakhaId === null ? deleteField() : prepared.assignedShakhaId,
+    assignedVibhag: prepared.assignedVibhag === null ? deleteField() : prepared.assignedVibhag
+  };
+  if (prepared.uid) payload.uid = prepared.uid;
+
+  await setDoc(doc(requireDb(), "admins", prepared.email), payload, { merge: true });
+  return {
+    ...admin,
+    id: prepared.email,
+    email: prepared.email,
+    active: prepared.active,
+    assignedShakhaId: prepared.assignedShakhaId || undefined,
+    assignedVibhag: prepared.assignedVibhag || undefined
+  };
+}
+
+export async function deleteAdmin(email: string): Promise<void> {
+  const id = email.trim().toLowerCase();
+  if (!id) throw new Error("Admin email is required");
+  await deleteDoc(doc(requireDb(), "admins", id));
 }
 
 /* -------------------------------- Sankhya -------------------------------- */
