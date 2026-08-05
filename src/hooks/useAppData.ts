@@ -1,98 +1,99 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  getAdmins,
-  getAnnouncements,
-  getAttendance,
-  getPeople,
-  getQrCodes,
-  getShakhas,
+  getSankhya,
+  listAdmins,
+  listSankhya,
+  listShakhas,
   saveAdmin,
-  saveAnnouncement,
-  saveAttendance,
-  savePerson,
-  saveQrCode,
+  saveSankhya,
   saveShakha
-} from "../lib/repository";
+} from "../lib/db";
 import { daysAgoISO } from "../lib/dates";
-import type { AdminUser, Announcement, AttendanceRecord, Person, QrCodeRecord, ReportSummary, Shakha } from "../types";
+import {
+  emptyCounts,
+  sankhyaTotal,
+  type AdminUser,
+  type SankhyaCounts,
+  type SankhyaEntry,
+  type Shakha
+} from "../types";
 
-export function useAppData() {
+export function useAppData(enabled: boolean) {
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [qrCodes, setQrCodes] = useState<QrCodeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [sankhya, setSankhya] = useState<SankhyaEntry[]>([]);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
-    const [nextShakhas, nextPeople, nextAdmins, nextAttendance, nextAnnouncements, nextQrCodes] = await Promise.all([
-      getShakhas(),
-      getPeople(),
-      getAdmins(),
-      getAttendance(),
-      getAnnouncements(),
-      getQrCodes()
-    ]);
-    setShakhas(nextShakhas);
-    setPeople(nextPeople);
-    setAdmins(nextAdmins);
-    setAttendance(nextAttendance);
-    setAnnouncements(nextAnnouncements);
-    setQrCodes(nextQrCodes);
-    setLoading(false);
-  }, []);
+    setError(null);
+    try {
+      const [nextShakhas, nextAdmins, nextSankhya] = await Promise.all([
+        listShakhas(),
+        listAdmins(),
+        listSankhya()
+      ]);
+      setShakhas(nextShakhas);
+      setAdmins(nextAdmins);
+      setSankhya(nextSankhya);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const summary = useMemo<ReportSummary>(() => {
+  const summary = useMemo(() => {
     const weekStart = daysAgoISO(7);
     const monthStart = daysAgoISO(30);
+    const weekEntries = sankhya.filter((entry) => entry.date >= weekStart);
+    const monthEntries = sankhya.filter((entry) => entry.date >= monthStart);
     return {
-      totalMembers: people.length,
-      activeMembers: people.filter((person) => person.active).length,
-      newMembers: people.filter((person) => (person.createdAt || "") >= monthStart).length,
-      attendanceThisWeek: attendance.filter((record) => record.present && record.date >= weekStart).length,
-      attendanceThisMonth: attendance.filter((record) => record.present && record.date >= monthStart).length
+      shakhaCount: shakhas.length,
+      entriesThisWeek: weekEntries.length,
+      entriesThisMonth: monthEntries.length,
+      totalThisWeek: weekEntries.reduce((sum, entry) => sum + sankhyaTotal(entry.counts), 0),
+      totalThisMonth: monthEntries.reduce((sum, entry) => sum + sankhyaTotal(entry.counts), 0)
     };
-  }, [attendance, people]);
+  }, [sankhya, shakhas.length]);
 
   return {
     admins,
-    announcements,
-    attendance,
+    error,
     loading,
-    people,
-    qrCodes,
     refresh,
+    sankhya,
     shakhas,
     summary,
+    loadSankhyaFor: async (shakhaId: string, date: string) => getSankhya(shakhaId, date),
     upsertAdmin: async (admin: AdminUser) => {
-      await saveAdmin(admin);
-      setAdmins((items) => [admin, ...items.filter((item) => item.id !== admin.id)]);
-    },
-    addAnnouncement: async (announcement: Omit<Announcement, "id">) => {
-      const saved = await saveAnnouncement(announcement);
-      setAnnouncements((items) => [saved, ...items]);
-    },
-    recordAttendance: async (record: AttendanceRecord) => {
-      await saveAttendance(record);
-      setAttendance((items) => [record, ...items.filter((item) => item.id !== record.id)]);
-    },
-    upsertPerson: async (person: Person) => {
-      await savePerson(person);
-      setPeople((items) => [person, ...items.filter((item) => item.id !== person.id)]);
-    },
-    saveQr: async (qr: QrCodeRecord) => {
-      await saveQrCode(qr);
-      setQrCodes((items) => [qr, ...items.filter((item) => item.id !== qr.id)]);
+      const saved = await saveAdmin(admin);
+      setAdmins((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
+      return saved;
     },
     upsertShakha: async (shakha: Shakha) => {
-      await saveShakha(shakha);
-      setShakhas((items) => [shakha, ...items.filter((item) => item.id !== shakha.id)]);
-    }
+      const saved = await saveShakha(shakha);
+      setShakhas((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
+      return saved;
+    },
+    recordSankhya: async (input: {
+      shakhaId: string;
+      shakhaName: string;
+      date: string;
+      counts: SankhyaCounts;
+      notes: string;
+      recordedBy: string;
+    }) => {
+      const saved = await saveSankhya(input);
+      setSankhya((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
+      return saved;
+    },
+    emptyCounts
   };
 }

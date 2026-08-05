@@ -1,72 +1,98 @@
-# ShakhaOS
+# Shakha Mechanics
 
-ShakhaOS is a Firebase-hosted React + TypeScript PWA for HSS Shakha attendance and volunteer administration.
+Firebase-hosted React + TypeScript app for weekly HSS shakha sankhya entry. Primary data feeds Sampark.
 
-## MVP Coverage
+## Core flow
 
-- Google sign-in wiring through Firebase Authentication.
-- Mobile-first operations dashboard.
-- QR code generation and PNG download per Shakha.
-- Attendance capture by date and Shakha.
-- Shakha, people, administrator, report, and announcement screens.
-- Firestore repository layer with demo fallback data.
-- Firebase Hosting config, Firestore indexes, and RBAC security rules.
+1. Shakha admin signs in with Google.
+2. Selects shakha + date.
+3. Enters category counts (Sevika, SwayamSewak, Shishu, Bala, Kishores, Praudh, Others) + notes.
+4. Saves one Firestore document per shakha per day under `sankhya/{shakhaId}_{date}`.
 
-## Local Setup
+## Architecture (aligned with attendance-tracker)
 
-1. Install dependencies:
+- Vite + React + TypeScript SPA
+- Firebase Auth (Google) + Firestore + Hosting
+- No demo/sample data — empty project shows empty lists until you add shakhas/admins
+- Access gated by `admins/{email}` documents
 
-   ```powershell
-   pnpm install
-   ```
+## Firestore collections
 
-2. Create a Firebase web app and enable:
+| Collection | Purpose |
+|---|---|
+| `sankhya` | Daily category counts (Sampark feed) |
+| `shakhas` | Shakha registry |
+| `admins` | Role allow-list (doc id = lowercased email) |
 
-   - Authentication: Google provider
-   - Firestore Database
-   - Firebase Hosting
-
-3. Copy `.env.example` to `.env.local` and fill in the Firebase web app values.
-
-4. Start the app:
-
-   ```powershell
-   pnpm dev
-   ```
-
-## Firestore Collections
-
-- `people`
-- `shakhas`
-- `peopleShakha`
-- `admins`
-- `attendance`
-- `qrCodes`
-- `announcements`
-
-Admin document IDs should be the user's email address, because the Firestore rules use the signed-in email to resolve role and assignment.
-
-Example bootstrap document:
+### `sankhya` document shape
 
 ```json
 {
-  "email": "admin@example.com",
+  "shakhaId": "aryabhatta",
+  "shakhaName": "Aryabhatta",
+  "date": "2026-08-05",
+  "counts": {
+    "sevika": 0,
+    "swayamSewak": 0,
+    "shishu": 0,
+    "balas": 0,
+    "kishores": 0,
+    "praudh": 0,
+    "others": 0
+  },
+  "notes": "",
+  "recordedBy": "<uid-or-email>",
+  "recordedAt": "ISO-8601",
+  "updatedAt": "ISO-8601"
+}
+```
+
+### Bootstrap National Admin
+
+Create this document in Firestore console before first login (rules require an existing admin):
+
+- Collection: `admins`
+- Document ID: your email (lowercase), e.g. `you@example.com`
+- Fields:
+
+```json
+{
+  "email": "you@example.com",
   "role": "nationalAdmin",
   "active": true
 }
 ```
 
+## Local setup
+
+1. Create a **new** Firebase project for Shakha Mechanics (do not reuse the attendance-tracker project).
+2. Enable Authentication → Google, Firestore, and Hosting.
+3. Register a web app and copy config into `.env.local` from `.env.example`.
+4. Put the project id in `.firebaserc`.
+5. Install and run:
+
+```bash
+pnpm install
+pnpm dev
+```
+
 ## Deploy
 
-Update `.firebaserc` with your Firebase project ID, then run:
-
-```powershell
+```bash
 pnpm build
-firebase deploy
+pnpm deploy
+# or hosting only:
+pnpm deploy:hosting
+```
+
+First-time rules/indexes:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes
 ```
 
 ## Notes
 
-- The app runs in demo mode until Firebase environment variables are set.
-- For production, seed the first National Admin from the Firebase console or a trusted script before opening the app broadly.
-- Offline sync, push notifications, self check-in, Sampark integration, and analytics dashboards are intentionally left as future enhancements from the product specification.
+- Chicken-and-egg: the first National Admin must be seeded in the Firebase console.
+- Sampark export/integration is intentionally deferred; `sankhya` is the source of truth.
+- App logo: HSS mark from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Hindu.Swayamsevak_sangh.png) (CC BY-SA 4.0).

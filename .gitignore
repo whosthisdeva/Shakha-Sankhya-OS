@@ -39,3 +39,9 @@ coverage/
 # Firebase Admin credentials (never commit these)
 service-account.json
 *-firebase-adminsdk-*.json
+
+# Firebase local cache
+.firebase/
+
+# Prefer pnpm lockfile only
+package-lock.json

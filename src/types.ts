@@ -1,7 +1,5 @@
 export type Role = "nationalAdmin" | "vibhagAdmin" | "shakhaAdmin" | "teacher" | "volunteer";
 
-export type Gender = "Female" | "Male" | "Other" | "Prefer not to say";
-
 export interface Shakha {
   id: string;
   name: string;
@@ -12,19 +10,6 @@ export interface Shakha {
   type: string;
   karyawah: string;
   mukhyaShikshak: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface Person {
-  id: string;
-  name: string;
-  position: string;
-  assignedShakhaId: string;
-  gender: Gender;
-  location: string;
-  email: string;
-  active: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -41,42 +26,65 @@ export interface AdminUser {
   updatedAt?: string;
 }
 
-export interface AttendanceRecord {
-  id: string;
-  date: string;
-  shakhaId: string;
-  memberId: string;
-  memberName: string;
-  present: boolean;
-  timeRecorded: string;
-  recordedBy: string;
-  location: string;
+/** Category counts for one shakha on one day — primary Sampark feed. */
+export interface SankhyaCounts {
+  sevika: number;
+  swayamSewak: number;
+  shishu: number;
+  balas: number;
+  kishores: number;
+  praudh: number;
+  others: number;
 }
 
-export interface Announcement {
-  id: string;
-  title: string;
-  body: string;
-  audience: "All" | "National" | "Vibhag" | "Shakha";
-  shakhaId?: string;
-  vibhag?: string;
-  createdBy: string;
-  createdAt: string;
-}
-
-export interface QrCodeRecord {
+export interface SankhyaEntry {
   id: string;
   shakhaId: string;
   shakhaName: string;
-  payload: string;
-  generatedDate: string;
-  generatedBy: string;
+  date: string;
+  counts: SankhyaCounts;
+  notes: string;
+  recordedBy: string;
+  recordedAt?: string;
+  updatedAt?: string;
 }
 
-export interface ReportSummary {
-  totalMembers: number;
-  activeMembers: number;
-  newMembers: number;
-  attendanceThisWeek: number;
-  attendanceThisMonth: number;
+export function emptyCounts(): SankhyaCounts {
+  return {
+    sevika: 0,
+    swayamSewak: 0,
+    shishu: 0,
+    balas: 0,
+    kishores: 0,
+    praudh: 0,
+    others: 0
+  };
+}
+
+export function sankhyaTotal(counts: SankhyaCounts): number {
+  return (
+    counts.sevika +
+    counts.swayamSewak +
+    counts.shishu +
+    counts.balas +
+    counts.kishores +
+    counts.praudh +
+    counts.others
+  );
+}
+
+export const SANKHYA_FIELDS: { key: keyof SankhyaCounts; label: string }[] = [
+  { key: "sevika", label: "Sevika" },
+  { key: "swayamSewak", label: "SwayamSewak" },
+  { key: "shishu", label: "Shishu" },
+  { key: "balas", label: "Bala" },
+  { key: "kishores", label: "Kishores" },
+  { key: "praudh", label: "Praudh" },
+  { key: "others", label: "Others" }
+];
+
+export const NOTES_MAX = 500;
+
+export function sankhyaDocId(shakhaId: string, date: string) {
+  return `${shakhaId}_${date}`;
 }

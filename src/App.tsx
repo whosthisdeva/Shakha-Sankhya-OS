@@ -1,27 +1,30 @@
-import QRCode from "qrcode";
 import {
   BarChart3,
-  Bell,
-  CalendarCheck,
   Check,
-  Download,
   LogIn,
   LogOut,
-  QrCode,
   RefreshCw,
   ShieldCheck,
   Users,
-  UserPlus
+  ClipboardList
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isFirebaseConfigured } from "./lib/firebase";
-import { nowISO, nowTime, todayISO } from "./lib/dates";
 import { useAppData } from "./hooks/useAppData";
 import { useAuth } from "./hooks/useAuthValue";
-import type { AdminUser, AttendanceRecord, Gender, Person, QrCodeRecord, Role, Shakha } from "./types";
+import {
+  NOTES_MAX,
+  SANKHYA_FIELDS,
+  emptyCounts,
+  sankhyaTotal,
+  type AdminUser,
+  type Role,
+  type SankhyaCounts,
+  type SankhyaEntry,
+  type Shakha
+} from "./types";
 
 const roles: Role[] = ["nationalAdmin", "vibhagAdmin", "shakhaAdmin", "teacher", "volunteer"];
-const genders: Gender[] = ["Female", "Male", "Other", "Prefer not to say"];
 
 function idFrom(input: string) {
   return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || crypto.randomUUID();
@@ -31,37 +34,110 @@ function roleLabel(role: Role) {
   return role.replace(/([A-Z])/g, " $1").replace(/^./, (value) => value.toUpperCase());
 }
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function App() {
-  const { user, loading: authLoading, signIn, logout } = useAuth();
-  const data = useAppData();
-  const [tab, setTab] = useState("attendance");
-  const [selectedShakhaId, setSelectedShakhaId] = useState("aryabhatta");
+  const { user, admin, isAdmin, loading: authLoading, authError, adminCheckError, signIn, logout } = useAuth();
+  const canLoad = Boolean(isFirebaseConfigured && user && isAdmin);
+  const data = useAppData(canLoad);
+  const [tab, setTab] = useState("sankhya");
+  const [selectedShakhaId, setSelectedShakhaId] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
 
-  const selectedShakha = data.shakhas.find((shakha) => shakha.id === selectedShakhaId) ?? data.shakhas[0];
-  const membersForShakha = data.people.filter((person) => person.assignedShakhaId === selectedShakha?.id && person.active);
-
-  useEffect(() => {
-    if (!selectedShakhaId && data.shakhas[0]) setSelectedShakhaId(data.shakhas[0].id);
+  const selectedShakha = useMemo(() => {
+    if (!data.shakhas.length) return undefined;
+    return data.shakhas.find((shakha) => shakha.id === selectedShakhaId) ?? data.shakhas[0];
   }, [data.shakhas, selectedShakhaId]);
 
+  useEffect(() => {
+    if (admin?.assignedShakhaId && !selectedShakhaId) {
+      setSelectedShakhaId(admin.assignedShakhaId);
+    } else if (data.shakhas[0] && !selectedShakhaId) {
+      setSelectedShakhaId(data.shakhas[0].id);
+    }
+  }, [admin?.assignedShakhaId, data.shakhas, selectedShakhaId]);
+
   const nav = [
-    { id: "attendance", label: "Attendance", icon: CalendarCheck },
-    { id: "qr", label: "QR", icon: QrCode },
+    { id: "sankhya", label: "Sankhya", icon: ClipboardList },
     { id: "shakhas", label: "Shakhas", icon: ShieldCheck },
-    { id: "people", label: "People", icon: UserPlus },
     { id: "admins", label: "Admins", icon: Users },
-    { id: "reports", label: "Reports", icon: BarChart3 },
-    { id: "announcements", label: "Announcements", icon: Bell }
+    { id: "reports", label: "Reports", icon: BarChart3 }
   ];
+
+  if (!isFirebaseConfigured) return <SetupNeeded />;
+
+  if (authLoading) {
+    return <div className="gate-screen">Checking sign-in…</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="gate-screen">
+        <div className="gate-card">
+          <div className="brand-mark">
+            <img alt="HSS logo" src="/hss-logo.png" />
+          </div>
+          <h1>Shakha Mechanics</h1>
+          <p>Sign in with Google to record weekly sankhya.</p>
+          <button
+            className="primary"
+            disabled={signingIn}
+            onClick={async () => {
+              setSigningIn(true);
+              try {
+                await signIn();
+              } catch {
+                // authError is set in AuthProvider
+              } finally {
+                setSigningIn(false);
+              }
+            }}
+            type="button"
+          >
+            <LogIn size={18} />
+            {signingIn ? "Signing in…" : "Sign in with Google"}
+          </button>
+          {authError ? <p className="form-error">{authError}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="gate-screen">
+        <div className="gate-card">
+          <h1>Access restricted</h1>
+          <p>
+            Signed in as <strong>{user.email}</strong>, but there is no active admin profile for this
+            account.
+          </p>
+          {adminCheckError ? <p className="form-error">{adminCheckError}</p> : null}
+          <p>
+            Expected Firestore doc: <code>admins/{user.email?.toLowerCase()}</code> with{" "}
+            <code>active: true</code>.
+          </p>
+          <button className="text-button" onClick={logout} type="button">
+            <LogOut size={18} />
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark">
+            <img alt="HSS logo" src="/hss-logo.png" />
+          </div>
           <div>
-            <strong>ShakhaOS</strong>
-            <span>Attendance & Volunteer Assistant</span>
+            <strong>Shakha Mechanics</strong>
+            <span>Sankhya for Sampark</span>
           </div>
         </div>
         <nav className="nav-list" aria-label="Primary">
@@ -81,203 +157,248 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{nav.find((item) => item.id === tab)?.label}</h1>
-            <p>{isFirebaseConfigured ? "Connected to Firebase" : "Demo mode until Firebase environment variables are set"}</p>
+            <p>
+              {roleLabel(admin!.role)} · Firebase connected
+            </p>
           </div>
           <div className="topbar-actions">
             <button className="icon-button" onClick={data.refresh} title="Refresh data" type="button">
               <RefreshCw size={18} />
             </button>
-            {user ? (
-              <button className="text-button" onClick={logout} type="button">
-                <LogOut size={18} />
-                {user.displayName || user.email}
-              </button>
-            ) : (
-              <button className="primary" disabled={authLoading || !isFirebaseConfigured} onClick={signIn} type="button">
-                <LogIn size={18} />
-                Sign in with Google
-              </button>
-            )}
+            <button className="text-button" onClick={logout} type="button">
+              <LogOut size={18} />
+              {user.displayName || user.email}
+            </button>
           </div>
         </header>
 
-        <div className="selector-row">
-          <label>
-            Shakha
-            <select value={selectedShakha?.id || ""} onChange={(event) => setSelectedShakhaId(event.target.value)}>
-              {data.shakhas.map((shakha) => (
-                <option key={shakha.id} value={shakha.id}>
-                  {shakha.name} - {shakha.location}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedShakha && (
-            <span className="status-pill">
-              {selectedShakha.vibhag} / {selectedShakha.sambhag} / {selectedShakha.meetingTime}
-            </span>
-          )}
-        </div>
+        {(tab === "sankhya" || tab === "reports") && (
+          <div className="selector-row">
+            <label>
+              Shakha
+              <select value={selectedShakha?.id || ""} onChange={(event) => setSelectedShakhaId(event.target.value)}>
+                {data.shakhas.map((shakha) => (
+                  <option key={shakha.id} value={shakha.id}>
+                    {shakha.name} - {shakha.location}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedShakha && (
+              <span className="status-pill">
+                {selectedShakha.vibhag} / {selectedShakha.sambhag} / {selectedShakha.meetingTime}
+              </span>
+            )}
+          </div>
+        )}
 
-        {data.loading ? <div className="empty-state">Loading ShakhaOS data...</div> : null}
-        {!data.loading && tab === "attendance" && selectedShakha && (
-          <AttendanceScreen
-            people={membersForShakha}
+        {data.error ? <div className="error-banner">{data.error}</div> : null}
+        {data.loading ? <div className="empty-state">Loading Shakha Mechanics data…</div> : null}
+
+        {!data.loading && tab === "sankhya" && selectedShakha && (
+          <SankhyaScreen
+            loadEntry={data.loadSankhyaFor}
+            onSave={data.recordSankhya}
+            recordedBy={user.uid || user.email || "unknown"}
             selectedShakha={selectedShakha}
-            onRecord={(record) => data.recordAttendance(record)}
-            recordedBy={user?.uid || "demo"}
           />
         )}
-        {!data.loading && tab === "qr" && selectedShakha && (
-          <QrScreen generatedBy={user?.uid || "demo"} onSave={data.saveQr} qrCodes={data.qrCodes} selectedShakha={selectedShakha} />
+        {!data.loading && tab === "sankhya" && !selectedShakha && (
+          <div className="empty-state">Add a shakha first (Shakhas tab), then enter sankhya here.</div>
         )}
         {!data.loading && tab === "shakhas" && <ShakhaScreen onSave={data.upsertShakha} shakhas={data.shakhas} />}
-        {!data.loading && tab === "people" && <PeopleScreen onSave={data.upsertPerson} people={data.people} shakhas={data.shakhas} />}
         {!data.loading && tab === "admins" && <AdminScreen admins={data.admins} onSave={data.upsertAdmin} shakhas={data.shakhas} />}
         {!data.loading && tab === "reports" && (
-          <ReportsScreen attendance={data.attendance} people={data.people} shakhas={data.shakhas} summary={data.summary} />
-        )}
-        {!data.loading && tab === "announcements" && (
-          <AnnouncementScreen
-            announcements={data.announcements}
-            createdBy={user?.uid || "demo"}
-            onSave={data.addAnnouncement}
-            selectedShakha={selectedShakha}
-          />
+          <ReportsScreen sankhya={data.sankhya} selectedShakhaId={selectedShakha?.id} shakhas={data.shakhas} summary={data.summary} />
         )}
       </section>
     </main>
   );
 }
 
-function AttendanceScreen({
-  onRecord,
-  people,
+function SetupNeeded() {
+  return (
+    <div className="gate-screen">
+      <div className="gate-card">
+        <h1>Firebase setup needed</h1>
+        <p>Copy <code>.env.example</code> to <code>.env.local</code> and fill in your Firebase web app config, then restart the dev server.</p>
+      </div>
+    </div>
+  );
+}
+
+function Counter({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="counter-card">
+      <span className="counter-label">{label}</span>
+      <div className="counter-controls">
+        <button
+          aria-label={`Decrease ${label}`}
+          className="counter-btn"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          type="button"
+        >
+          −
+        </button>
+        <input
+          className="counter-input"
+          min={0}
+          onChange={(event) => onChange(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+          type="number"
+          value={value}
+        />
+        <button aria-label={`Increase ${label}`} className="counter-btn" onClick={() => onChange(value + 1)} type="button">
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SankhyaScreen({
+  loadEntry,
+  onSave,
   recordedBy,
   selectedShakha
 }: {
-  onRecord: (record: AttendanceRecord) => Promise<void>;
-  people: Person[];
+  loadEntry: (shakhaId: string, date: string) => Promise<SankhyaEntry | null>;
+  onSave: (input: {
+    shakhaId: string;
+    shakhaName: string;
+    date: string;
+    counts: SankhyaCounts;
+    notes: string;
+    recordedBy: string;
+  }) => Promise<SankhyaEntry>;
   recordedBy: string;
   selectedShakha: Shakha;
 }) {
   const [date, setDate] = useState(todayISO());
-  const [marked, setMarked] = useState<Record<string, boolean>>({});
+  const [counts, setCounts] = useState<SankhyaCounts>(emptyCounts());
+  const [notes, setNotes] = useState("");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [loadingEntry, setLoadingEntry] = useState(true);
 
-  const submit = async () => {
-    await Promise.all(
-      people
-        .filter((person) => marked[person.id])
-        .map((person) =>
-          onRecord({
-            id: `${date}-${selectedShakha.id}-${person.id}`,
-            date,
-            shakhaId: selectedShakha.id,
-            memberId: person.id,
-            memberName: person.name,
-            present: true,
-            timeRecorded: nowTime(),
-            recordedBy,
-            location: selectedShakha.location
-          })
-        )
-    );
-    setMarked({});
+  const load = useCallback(async () => {
+    setLoadingEntry(true);
+    setError(null);
+    try {
+      const existing = await loadEntry(selectedShakha.id, date);
+      if (existing) {
+        setCounts(existing.counts);
+        setNotes(existing.notes);
+      } else {
+        setCounts(emptyCounts());
+        setNotes("");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load sankhya");
+      setCounts(emptyCounts());
+      setNotes("");
+    } finally {
+      setLoadingEntry(false);
+    }
+  }, [date, loadEntry, selectedShakha.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const setField = (key: keyof SankhyaCounts, value: number) => {
+    setCounts((prev) => ({ ...prev, [key]: value }));
   };
 
+  const save = async () => {
+    setSaveState("saving");
+    setError(null);
+    try {
+      await onSave({
+        shakhaId: selectedShakha.id,
+        shakhaName: selectedShakha.name,
+        date,
+        counts,
+        notes,
+        recordedBy
+      });
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+      setSaveState("idle");
+    }
+  };
+
+  const total = sankhyaTotal(counts);
+
   return (
-    <section className="screen-grid">
+    <section className="sankhya-screen">
       <div className="panel wide">
         <div className="panel-header">
           <div>
-            <h2>Record Attendance</h2>
-            <p>{people.length} active members</p>
+            <h2>{selectedShakha.name}</h2>
+            <p>Enter category counts for the day. One record per shakha per date.</p>
           </div>
           <label>
             Date
             <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
           </label>
         </div>
-        <div className="member-list">
-          {people.map((person) => (
-            <button
-              className={marked[person.id] ? "member-row selected" : "member-row"}
-              key={person.id}
-              onClick={() => setMarked((items) => ({ ...items, [person.id]: !items[person.id] }))}
-              type="button"
-            >
-              <span>
-                <strong>{person.name}</strong>
-                <small>
-                  {person.gender} / {person.location} / {person.position}
-                </small>
-              </span>
-              {marked[person.id] ? <Check size={18} /> : null}
-            </button>
-          ))}
-        </div>
-        <button className="primary" disabled={!Object.values(marked).some(Boolean)} onClick={submit} type="button">
-          <CalendarCheck size={18} />
-          Save Attendance
-        </button>
+
+        {loadingEntry ? (
+          <div className="empty-state">Loading entry…</div>
+        ) : (
+          <>
+            <div className="counter-grid">
+              {SANKHYA_FIELDS.map((field) => (
+                <Counter key={field.key} label={field.label} onChange={(value) => setField(field.key, value)} value={counts[field.key]} />
+              ))}
+            </div>
+
+            <div className="total-bar">
+              <span>Total</span>
+              <strong>{total}</strong>
+            </div>
+
+            <label className="notes-field">
+              Notes
+              <textarea
+                maxLength={NOTES_MAX}
+                onChange={(event) => setNotes(event.target.value.slice(0, NOTES_MAX))}
+                placeholder="Optional notes (max 500 characters)"
+                rows={3}
+                value={notes}
+              />
+              <small>
+                {notes.length}/{NOTES_MAX}
+              </small>
+            </label>
+
+            {error ? <p className="form-error">{error}</p> : null}
+
+            <div className="save-row">
+              <button className="primary" disabled={saveState === "saving"} onClick={save} type="button">
+                <Check size={18} />
+                {saveState === "saving" ? "Saving…" : "Save sankhya"}
+              </button>
+              {saveState === "saved" ? <span className="saved-hint">Saved</span> : null}
+            </div>
+          </>
+        )}
       </div>
     </section>
   );
 }
 
-function QrScreen({
-  generatedBy,
-  onSave,
-  qrCodes,
-  selectedShakha
-}: {
-  generatedBy: string;
-  onSave: (qr: QrCodeRecord) => Promise<void>;
-  qrCodes: QrCodeRecord[];
-  selectedShakha: Shakha;
-}) {
-  const [qrUrl, setQrUrl] = useState("");
-  const payload = useMemo(() => JSON.stringify({ type: "shakha-checkin", shakhaId: selectedShakha.id, name: selectedShakha.name }), [selectedShakha]);
-
-  const generate = async () => {
-    const url = await QRCode.toDataURL(payload, { width: 360, margin: 2, color: { dark: "#0f3d3a", light: "#ffffff" } });
-    setQrUrl(url);
-    await onSave({
-      id: selectedShakha.id,
-      shakhaId: selectedShakha.id,
-      shakhaName: selectedShakha.name,
-      payload,
-      generatedDate: todayISO(),
-      generatedBy
-    });
-  };
-
-  return (
-    <section className="screen-grid">
-      <div className="panel qr-panel">
-        <div className="panel-header">
-          <div>
-            <h2>{selectedShakha.name} QR Code</h2>
-            <p>Generated records: {qrCodes.length}</p>
-          </div>
-          <button className="primary" onClick={generate} type="button">
-            <QrCode size={18} />
-            Generate
-          </button>
-        </div>
-        {qrUrl ? <img alt={`${selectedShakha.name} QR code`} className="qr-image" src={qrUrl} /> : <div className="empty-state">Generate a QR code for this shakha.</div>}
-        {qrUrl ? (
-          <a className="text-button download-link" download={`${selectedShakha.name}-qr.png`} href={qrUrl}>
-            <Download size={18} />
-            Download PNG
-          </a>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function ShakhaScreen({ onSave, shakhas }: { onSave: (shakha: Shakha) => Promise<void>; shakhas: Shakha[] }) {
+function ShakhaScreen({ onSave, shakhas }: { onSave: (shakha: Shakha) => Promise<unknown>; shakhas: Shakha[] }) {
   const [form, setForm] = useState<Shakha>({
     id: "",
     name: "",
@@ -306,40 +427,33 @@ function ShakhaScreen({ onSave, shakhas }: { onSave: (shakha: Shakha) => Promise
   );
 }
 
-function PeopleScreen({ onSave, people, shakhas }: { onSave: (person: Person) => Promise<void>; people: Person[]; shakhas: Shakha[] }) {
-  const [form, setForm] = useState<Person>({
+function AdminScreen({ admins, onSave, shakhas }: { admins: AdminUser[]; onSave: (admin: AdminUser) => Promise<unknown>; shakhas: Shakha[] }) {
+  const [form, setForm] = useState<AdminUser>({
     id: "",
-    name: "",
-    position: "",
-    assignedShakhaId: shakhas[0]?.id || "",
-    gender: "Female",
-    location: "",
     email: "",
+    role: "shakhaAdmin",
+    assignedShakhaId: shakhas[0]?.id || "",
     active: true
   });
   return (
     <section className="screen-grid">
-      <EditorPanel title="Add Person" onSubmit={() => onSave({ ...form, id: form.id || idFrom(form.email || form.name), createdAt: nowISO() })}>
-        <TextInput label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <TextInput label="Position" value={form.position} onChange={(position) => setForm({ ...form, position })} />
-        <SelectInput label="Assigned Shakha" value={form.assignedShakhaId} options={shakhas.map((item) => [item.id, item.name])} onChange={(assignedShakhaId) => setForm({ ...form, assignedShakhaId })} />
-        <SelectInput label="Gender" value={form.gender} options={genders.map((item) => [item, item])} onChange={(gender) => setForm({ ...form, gender: gender as Gender })} />
-        <TextInput label="Location" value={form.location} onChange={(location) => setForm({ ...form, location })} />
+      <EditorPanel
+        title="Add Administrator"
+        onSubmit={() => onSave({ ...form, id: form.email.trim().toLowerCase(), email: form.email.trim().toLowerCase() })}
+      >
         <TextInput label="Email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-      </EditorPanel>
-      <ListPanel title="People" items={people.map((item) => `${item.name} / ${item.position} / ${item.email}`)} />
-    </section>
-  );
-}
-
-function AdminScreen({ admins, onSave, shakhas }: { admins: AdminUser[]; onSave: (admin: AdminUser) => Promise<void>; shakhas: Shakha[] }) {
-  const [form, setForm] = useState<AdminUser>({ id: "", email: "", role: "teacher", assignedShakhaId: shakhas[0]?.id || "", active: true });
-  return (
-    <section className="screen-grid">
-      <EditorPanel title="Add Administrator" onSubmit={() => onSave({ ...form, id: form.id || form.email.trim().toLowerCase() })}>
-        <TextInput label="Email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-        <SelectInput label="Access Level" value={form.role} options={roles.map((item) => [item, roleLabel(item)])} onChange={(role) => setForm({ ...form, role: role as Role })} />
-        <SelectInput label="Assigned Shakha" value={form.assignedShakhaId || ""} options={[["", "Optional"], ...shakhas.map((item) => [item.id, item.name] as [string, string])]} onChange={(assignedShakhaId) => setForm({ ...form, assignedShakhaId })} />
+        <SelectInput
+          label="Access Level"
+          value={form.role}
+          options={roles.map((item) => [item, roleLabel(item)])}
+          onChange={(role) => setForm({ ...form, role: role as Role })}
+        />
+        <SelectInput
+          label="Assigned Shakha"
+          value={form.assignedShakhaId || ""}
+          options={[["", "Optional / National"], ...shakhas.map((item) => [item.id, item.name] as [string, string])]}
+          onChange={(assignedShakhaId) => setForm({ ...form, assignedShakhaId: assignedShakhaId || undefined })}
+        />
       </EditorPanel>
       <ListPanel title="Administrators" items={admins.map((item) => `${item.email} / ${roleLabel(item.role)} / ${item.assignedShakhaId || "All"}`)} />
     </section>
@@ -347,36 +461,74 @@ function AdminScreen({ admins, onSave, shakhas }: { admins: AdminUser[]; onSave:
 }
 
 function ReportsScreen({
-  attendance,
-  people,
+  sankhya,
+  selectedShakhaId,
   shakhas,
   summary
 }: {
-  attendance: AttendanceRecord[];
-  people: Person[];
+  sankhya: SankhyaEntry[];
+  selectedShakhaId?: string;
   shakhas: Shakha[];
-  summary: { totalMembers: number; activeMembers: number; newMembers: number; attendanceThisWeek: number; attendanceThisMonth: number };
+  summary: {
+    shakhaCount: number;
+    entriesThisWeek: number;
+    entriesThisMonth: number;
+    totalThisWeek: number;
+    totalThisMonth: number;
+  };
 }) {
-  const byShakha = shakhas.map((shakha) => ({
-    shakha,
-    members: people.filter((person) => person.assignedShakhaId === shakha.id).length,
-    attendance: attendance.filter((record) => record.shakhaId === shakha.id && record.present).length
-  }));
+  const byShakha = shakhas.map((shakha) => {
+    const entries = sankhya.filter((entry) => entry.shakhaId === shakha.id);
+    const total = entries.reduce((sum, entry) => sum + sankhyaTotal(entry.counts), 0);
+    return { shakha, entries: entries.length, total };
+  });
+  const recent = sankhya
+    .filter((entry) => !selectedShakhaId || entry.shakhaId === selectedShakhaId)
+    .slice(0, 12);
+
   return (
     <section className="reports">
-      <div className="metric"><span>Total Members</span><strong>{summary.totalMembers}</strong></div>
-      <div className="metric"><span>Active Members</span><strong>{summary.activeMembers}</strong></div>
-      <div className="metric"><span>New Members</span><strong>{summary.newMembers}</strong></div>
-      <div className="metric"><span>This Week</span><strong>{summary.attendanceThisWeek}</strong></div>
-      <div className="metric"><span>This Month</span><strong>{summary.attendanceThisMonth}</strong></div>
+      <div className="metric">
+        <span>Shakhas</span>
+        <strong>{summary.shakhaCount}</strong>
+      </div>
+      <div className="metric">
+        <span>Entries this week</span>
+        <strong>{summary.entriesThisWeek}</strong>
+      </div>
+      <div className="metric">
+        <span>Total this week</span>
+        <strong>{summary.totalThisWeek}</strong>
+      </div>
+      <div className="metric">
+        <span>Total this month</span>
+        <strong>{summary.totalThisMonth}</strong>
+      </div>
       <div className="panel wide">
-        <h2>Attendance by Shakha</h2>
+        <h2>By Shakha</h2>
         <div className="table">
           {byShakha.map((row) => (
             <div className="table-row" key={row.shakha.id}>
               <span>{row.shakha.name}</span>
-              <span>{row.members} members</span>
-              <strong>{row.attendance} attendance records</strong>
+              <span>{row.entries} days</span>
+              <strong>{row.total} total</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel wide">
+        <h2>Recent entries</h2>
+        <div className="table">
+          {recent.length === 0 ? <div className="empty-state">No sankhya saved yet.</div> : null}
+          {recent.map((entry) => (
+            <div className="table-row" key={entry.id}>
+              <span>
+                {entry.date} · {entry.shakhaName}
+              </span>
+              <span>
+                Sevika {entry.counts.sevika} / SS {entry.counts.swayamSewak} / Kishore {entry.counts.kishores}
+              </span>
+              <strong>{sankhyaTotal(entry.counts)}</strong>
             </div>
           ))}
         </div>
@@ -385,43 +537,7 @@ function ReportsScreen({
   );
 }
 
-function AnnouncementScreen({
-  announcements,
-  createdBy,
-  onSave,
-  selectedShakha
-}: {
-  announcements: { id: string; title: string; body: string; audience: string }[];
-  createdBy: string;
-  onSave: (announcement: { title: string; body: string; audience: "All" | "National" | "Vibhag" | "Shakha"; shakhaId?: string; createdBy: string; createdAt: string }) => Promise<void>;
-  selectedShakha?: Shakha;
-}) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  return (
-    <section className="screen-grid">
-      <EditorPanel title="Create Announcement" onSubmit={() => onSave({ title, body, audience: "Shakha", shakhaId: selectedShakha?.id, createdBy, createdAt: nowISO() })}>
-        <TextInput label="Title" value={title} onChange={setTitle} />
-        <label>
-          Body
-          <textarea value={body} onChange={(event) => setBody(event.target.value)} />
-        </label>
-      </EditorPanel>
-      <div className="panel">
-        <h2>Announcements</h2>
-        {announcements.map((item) => (
-          <article className="announcement" key={item.id}>
-            <strong>{item.title}</strong>
-            <p>{item.body}</p>
-            <small>{item.audience}</small>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function EditorPanel({ children, onSubmit, title }: { children: React.ReactNode; onSubmit: () => Promise<void>; title: string }) {
+function EditorPanel({ children, onSubmit, title }: { children: React.ReactNode; onSubmit: () => Promise<unknown>; title: string }) {
   const [saving, setSaving] = useState(false);
   return (
     <form
@@ -429,8 +545,11 @@ function EditorPanel({ children, onSubmit, title }: { children: React.ReactNode;
       onSubmit={async (event) => {
         event.preventDefault();
         setSaving(true);
-        await onSubmit();
-        setSaving(false);
+        try {
+          await onSubmit();
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <h2>{title}</h2>
@@ -482,6 +601,7 @@ function ListPanel({ items, title }: { items: string[]; title: string }) {
     <div className="panel">
       <h2>{title}</h2>
       <div className="stack-list">
+        {items.length === 0 ? <div className="empty-state">None yet.</div> : null}
         {items.map((item) => (
           <div className="list-item" key={item}>
             {item}

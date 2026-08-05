@@ -1,19 +1,11 @@
 {
   "indexes": [
     {
-      "collectionGroup": "attendance",
+      "collectionGroup": "sankhya",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "shakhaId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "people",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "assignedShakhaId", "order": "ASCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
       ]
     }
   ],

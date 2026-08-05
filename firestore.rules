@@ -15,7 +15,9 @@ service cloud.firestore {
     }
 
     function isActiveAdmin() {
-      return signedIn() && exists(/databases/$(database)/documents/admins/$(email())) && adminDoc().data.active == true;
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(email()))
+        && adminDoc().data.active == true;
     }
 
     function hasRole(role) {
@@ -34,14 +36,22 @@ service cloud.firestore {
       return adminDoc().data.assignedVibhag;
     }
 
+    function shakhaVibhag(shakhaId) {
+      return get(/databases/$(database)/documents/shakhas/$(shakhaId)).data.vibhag;
+    }
+
     function canManageShakha(shakhaId) {
       return hasRole("nationalAdmin")
+        || (hasRole("vibhagAdmin") && assignedVibhag() == shakhaVibhag(shakhaId))
         || (hasRole("shakhaAdmin") && assignedShakha() == shakhaId)
-        || (hasRole("teacher") && assignedShakha() == shakhaId);
+        || (hasRole("teacher") && assignedShakha() == shakhaId)
+        || (hasRole("volunteer") && assignedShakha() == shakhaId);
     }
 
     match /admins/{adminEmail} {
-      allow read: if isActiveAdmin();
+      // Allow each signed-in user to read their own admin profile (bootstrap check).
+      allow get: if signedIn() && adminEmail == email();
+      allow list: if isActiveAdmin();
       allow create, update, delete: if hasRole("nationalAdmin");
     }
 
@@ -52,39 +62,13 @@ service cloud.firestore {
         || (hasRole("shakhaAdmin") && assignedShakha() == shakhaId);
     }
 
-    match /people/{personId} {
+    // One doc per shakha+date: {shakhaId}_{YYYY-MM-DD}
+    // Primary Sampark feed collection.
+    match /sankhya/{entryId} {
       allow read: if isActiveAdmin();
       allow create, update: if hasRole("nationalAdmin")
-        || (
-          hasRole("vibhagAdmin")
-          && get(/databases/$(database)/documents/shakhas/$(request.resource.data.assignedShakhaId)).data.vibhag == assignedVibhag()
-        )
-        || canManageShakha(request.resource.data.assignedShakhaId);
-      allow delete: if hasAnyRole(["nationalAdmin", "vibhagAdmin"]);
-    }
-
-    match /peopleShakha/{mappingId} {
-      allow read: if isActiveAdmin();
-      allow create, update: if hasRole("nationalAdmin") || canManageShakha(request.resource.data.shakhaId);
-      allow delete: if hasAnyRole(["nationalAdmin", "vibhagAdmin"]);
-    }
-
-    match /attendance/{attendanceId} {
-      allow read: if isActiveAdmin();
-      allow create, update: if hasRole("nationalAdmin") || canManageShakha(request.resource.data.shakhaId);
-      allow delete: if hasAnyRole(["nationalAdmin", "shakhaAdmin"]);
-    }
-
-    match /qrCodes/{qrId} {
-      allow read: if isActiveAdmin();
-      allow create, update: if hasRole("nationalAdmin") || canManageShakha(request.resource.data.shakhaId);
-      allow delete: if hasAnyRole(["nationalAdmin", "shakhaAdmin"]);
-    }
-
-    match /announcements/{announcementId} {
-      allow read: if isActiveAdmin();
-      allow create, update: if hasAnyRole(["nationalAdmin", "vibhagAdmin", "shakhaAdmin"]);
-      allow delete: if hasAnyRole(["nationalAdmin", "vibhagAdmin"]);
+        || canManageShakha(request.resource.data.shakhaId);
+      allow delete: if hasAnyRole(["nationalAdmin", "vibhagAdmin", "shakhaAdmin"]);
     }
   }
 }
